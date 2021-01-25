@@ -52,13 +52,12 @@ func ForEachTarget(pluginName string, ctx statectx.Context, ch test.TestStepChan
 	func() {
 		for {
 			select {
-			case tgt := <-ch.In:
-				log.Debugf("%s: ForEachTarget: received target %s", pluginName, tgt)
-				if tgt == nil {
+			case tgt, ok := <-ch.In:
+				if !ok {
 					log.Debugf("%s: ForEachTarget: all targets have been received", pluginName)
 					return
 				}
-
+				log.Debugf("%s: ForEachTarget: received target %s", pluginName, tgt)
 				wg.Add(1)
 				go func() {
 					defer wg.Done()

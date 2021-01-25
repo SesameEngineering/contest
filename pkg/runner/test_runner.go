@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/insomniacslk/xjson"
 	"github.com/sirupsen/logrus"
 
 	"github.com/facebookincubator/contest/pkg/cerrors"
@@ -92,16 +93,16 @@ type targetState struct {
 	tgt *target.Target
 
 	// This part of state gets serialized into JSON for resumption.
-	CurStep  int             `json:"cur_step"`  // Current step number.
-	CurPhase targetStepPhase `json:"cur_phase"` // Current phase of step execution.
+	CurStep  int             `json:"cs"`            // Current step number.
+	CurPhase targetStepPhase `json:"cp"`            // Current phase of step execution.
+	Res      *xjson.Error    `json:"res,omitempty"` // Final result, if reached the end state.
 
-	res   error      // Final result, if reached the end state.
 	resCh chan error // Channel used to communicate result by the step runner.
 }
 
 // resumeStateStruct is used to serialize runner state to be resumed in the future.
 type resumeStateStruct struct {
-	Version int                     `json:"version"`
+	Version int                     `json:"v"`
 	JobID   types.JobID             `json:"job_id"`
 	RunID   types.RunID             `json:"run_id"`
 	Targets map[string]*targetState `json:"targets"`
@@ -110,17 +111,17 @@ type resumeStateStruct struct {
 // Resume state version we are compatible with.
 // When imcompatible changes are made to the state format, bump this.
 // Restoring incompatible state will abort the job.
-const resumeStateStructVersion = 1
+const resumeStateStructVersion = 2
 
 // Run is the main enty point of the runner.
 func (tr *TestRunner) Run(
 	ctx statectx.Context,
 	t *test.Test, targets []*target.Target,
 	jobID types.JobID, runID types.RunID,
-	resumeState []byte) ([]byte, error) {
+	resumeState json.RawMessage) (json.RawMessage, error) {
 
 	// Set up logger
-	rootLog := logging.GetLogger("pkg/runner")
+	rootLog := logging.GetLogger("TestRunner")
 	fields := make(map[string]interface{})
 	fields["jobid"] = jobID
 	fields["runid"] = runID
@@ -137,7 +138,7 @@ func (tr *TestRunner) run(
 	ctx statectx.Context,
 	t *test.Test, targets []*target.Target,
 	jobID types.JobID, runID types.RunID,
-	resumeState []byte) ([]byte, error) {
+	resumeState json.RawMessage) (json.RawMessage, error) {
 
 	// Peel off contexts used for steps and target handlers.
 	stepCtx, _, stepCancel := statectx.WithParent(ctx)
@@ -411,7 +412,9 @@ func (tr *TestRunner) awaitTargetResult(ctx statectx.Context, ts *targetState, s
 			ss.log.Errorf("failed to emit event: %s", err)
 		}
 		tr.mu.Lock()
-		ts.res = res
+		if res != nil {
+			ts.Res = xjson.NewError(res)
+		}
 		ts.CurPhase = targetStepPhaseEnd
 		tr.mu.Unlock()
 		tr.cond.Signal()
@@ -477,7 +480,7 @@ loop:
 			break
 		}
 		tr.mu.Lock()
-		if ts.res != nil {
+		if ts.Res != nil {
 			tr.mu.Unlock()
 			break
 		}
@@ -582,8 +585,14 @@ func (tr *TestRunner) reportTargetResult(ctx statectx.Context, ss *stepState, tg
 			}
 		}
 		if ts.resCh == nil {
-			// This should not happen, must be an internal error.
-			return nil, fmt.Errorf("%s: target runner %s is not there, dropping result on the floor", ss, ts)
+			select {
+			case <-ctx.Done():
+				// If canceled, target handler may have left early. We don't care though.
+				return nil, statectx.ErrCanceled
+			default:
+				// This should not happen, must be an internal error.
+				return nil, fmt.Errorf("%s: target runner %s is not there, dropping result on the floor", ss, ts)
+			}
 		}
 		ss.log.Debugf("%s: result for %s: %v", ss, ts, res)
 		return ts.resCh, nil
@@ -628,6 +637,8 @@ func (tr *TestRunner) stepReader(ctx statectx.Context, ss *stepState) {
 	ss.log.Debugf("%s: step reader active", ss)
 	var err error
 	outCh := ss.outCh
+	cancelCh := ctx.Done()
+	var shutdownTimeoutCh <-chan time.Time
 loop:
 	for {
 		select {
@@ -659,22 +670,17 @@ loop:
 			if err = tr.reportTargetResult(ctx, ss, res.Target, res.Err); err != nil {
 				break loop
 			}
-		case <-ctx.Done():
+		case <-cancelCh:
 			ss.log.Debugf("%s: canceled 3, draining", ss)
-			for {
-				select {
-				case <-outCh:
-					break loop
-				case <-ss.errCh:
-					break loop
-				case <-time.After(tr.shutdownTimeout):
-					tr.mu.Lock()
-					if ss.runErr == nil {
-						ss.runErr = &cerrors.ErrTestStepsNeverReturned{}
-					}
-					tr.mu.Unlock()
-				}
+			// Allow some time to drain
+			cancelCh = nil
+			shutdownTimeoutCh = time.After(tr.shutdownTimeout)
+		case <-shutdownTimeoutCh:
+			tr.mu.Lock()
+			if ss.runErr == nil {
+				ss.runErr = &cerrors.ErrTestStepsNeverReturned{}
 			}
+			tr.mu.Unlock()
 		}
 	}
 	tr.mu.Lock()
@@ -794,8 +800,8 @@ func (ss *stepState) String() string {
 
 func (ts *targetState) String() string {
 	var resText string
-	if ts.res != nil {
-		resStr := fmt.Sprintf("%s", ts.res)
+	if ts.Res != nil {
+		resStr := fmt.Sprintf("%v", ts.Res)
 		if len(resStr) > 20 {
 			resStr = resStr[:20] + "..."
 		}

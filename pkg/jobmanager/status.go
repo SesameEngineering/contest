@@ -34,7 +34,7 @@ func (jm *JobManager) status(ev *api.Event) *api.EventResponse {
 		evResp.Err = fmt.Errorf("could not fetch events associated to job state: %v", err)
 		return &evResp
 	}
-	req, err := jm.jobStorageManager.GetJobRequest(jobID)
+	req, err := jm.jsm.GetJobRequest(jobID)
 	if err != nil {
 		evResp.Err = fmt.Errorf("failed to fetch request for job ID %d: %w", jobID, err)
 		return &evResp
@@ -89,7 +89,7 @@ func (jm *JobManager) status(ev *api.Event) *api.EventResponse {
 		}
 	}
 
-	report, err := jm.jobStorageManager.GetJobReport(jobID)
+	report, err := jm.jsm.GetJobReport(jobID)
 	if err != nil {
 		evResp.Err = fmt.Errorf("could not fetch job report: %v", err)
 		return &evResp

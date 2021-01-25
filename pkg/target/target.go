@@ -28,6 +28,9 @@ var EventTargetErr = event.Name("TargetErr")
 // EventTargetAcquired indicates that a target has been acquired for a Test
 var EventTargetAcquired = event.Name("TargetAcquired")
 
+// EventTargetAcquired indicates that a target has been released
+var EventTargetReleased = event.Name("TargetReleased")
+
 // ErrPayload represents the payload associated with a TargetErr event
 type ErrPayload struct {
 	Error string
@@ -40,10 +43,10 @@ type ErrPayload struct {
 // FQDN, PrimaryIPv4, and PrimaryIPv6 are used by plugins to contact the target, set as many as possible for maximum plugin compatibility.
 // Plugins are generally expected to attempt contacting devices via FQDN, IPv4, and IPv6. Note there is no way to enforce this and more specialized plugins might only support a subset.
 type Target struct {
-	ID          string
-	FQDN        string
-	PrimaryIPv4 net.IP
-	PrimaryIPv6 net.IP
+	ID          string `json:"ID"`
+	FQDN        string `json:"FQDN,omitempty"`
+	PrimaryIPv4 net.IP `json:"PrimaryIPv4,omitempty"`
+	PrimaryIPv6 net.IP `json:"PrimaryIPv6,omitempty"`
 }
 
 func (t *Target) String() string {

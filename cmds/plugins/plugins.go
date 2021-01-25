@@ -26,7 +26,6 @@ import (
 	"github.com/facebookincubator/contest/plugins/teststeps/echo"
 	"github.com/facebookincubator/contest/plugins/teststeps/example"
 	"github.com/facebookincubator/contest/plugins/teststeps/randecho"
-	"github.com/facebookincubator/contest/plugins/teststeps/slowecho"
 	"github.com/facebookincubator/contest/plugins/teststeps/sshcmd"
 	"github.com/sirupsen/logrus"
 )
@@ -43,7 +42,6 @@ var testFetchers = []test.TestFetcherLoader{
 
 var testSteps = []test.TestStepLoader{
 	echo.Load,
-	slowecho.Load,
 	example.Load,
 	cmd.Load,
 	sshcmd.Load,

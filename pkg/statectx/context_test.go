@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/facebookincubator/contest/tests/common"
+	"github.com/facebookincubator/contest/tests/common/goroutine_leak_check"
 )
 
 func TestBackgroundContext(t *testing.T) {
@@ -172,5 +172,5 @@ func TestWithParent(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	flag.Parse()
-	common.LeakCheckingTestMain(m)
+	goroutine_leak_check.LeakCheckingTestMain(m)
 }

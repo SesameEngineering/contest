@@ -64,7 +64,7 @@ for tag in integration integration_storage; do
           # to have tests run serially.
           pflag="-p 1"
         fi
-        go test -tags=${tag} -race -count=9 "${d}"
+        go test -tags=${tag} -race -count=4 ${pflag} "${d}"
         go test -tags=${tag} -race \
           -coverprofile=profile.out ${pflag} \
           -covermode=atomic \

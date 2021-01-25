@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/facebookincubator/contest/pkg/statectx"
 	"github.com/facebookincubator/contest/pkg/test"
 	"github.com/facebookincubator/contest/pkg/types"
 
@@ -35,12 +34,6 @@ type Job struct {
 	// a freeform list of strings that the user can provide to tag a job, and
 	// subsequently use to search and aggregate.
 	Tags []string
-
-	// TODO: StateCtx should be owned by the JobManager
-	// cancel or pause is a job-wide channel used to request and detect job's state change.
-	StateCtx       statectx.Context
-	StateCtxPause  func()
-	StateCtxCancel func()
 
 	// How many times a job has to run. 0 means infinite.
 	// A "run" is the execution of a sequence of tests. For example, setting
@@ -93,25 +86,6 @@ func (js State) String() string {
 		string(EventJobCancelled),
 		string(EventJobCancellationFailed),
 	}[js]
-}
-
-// Cancel closes the cancel channel to signal cancellation
-func (j *Job) Cancel() {
-	j.StateCtxCancel()
-}
-
-// Pause closes the pause channel to signal pause
-func (j *Job) Pause() {
-	j.StateCtxPause()
-}
-
-// IsCancelled returns whether the job has been cancelled
-func (j *Job) IsCancelled() bool {
-	return j.StateCtx.Err() == statectx.ErrCanceled
-}
-
-func (j *Job) IsPaused() bool {
-	return j.StateCtx.PausedCtx().Err() == statectx.ErrPaused
 }
 
 // InfoFetcher defines how to fetch job information

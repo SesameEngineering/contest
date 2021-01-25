@@ -17,7 +17,6 @@ import (
 
 	"github.com/facebookincubator/contest/pkg/cerrors"
 	"github.com/facebookincubator/contest/pkg/event"
-	"github.com/facebookincubator/contest/pkg/event/testevent"
 	"github.com/facebookincubator/contest/pkg/logging"
 	"github.com/facebookincubator/contest/pkg/pluginregistry"
 	"github.com/facebookincubator/contest/pkg/statectx"
@@ -28,6 +27,7 @@ import (
 	"github.com/facebookincubator/contest/plugins/storage/memory"
 	"github.com/facebookincubator/contest/plugins/teststeps/example"
 	"github.com/facebookincubator/contest/tests/common"
+	"github.com/facebookincubator/contest/tests/common/goroutine_leak_check"
 	"github.com/facebookincubator/contest/tests/plugins/teststeps/badtargets"
 	"github.com/facebookincubator/contest/tests/plugins/teststeps/channels"
 	"github.com/facebookincubator/contest/tests/plugins/teststeps/hanging"
@@ -77,7 +77,7 @@ func TestMain(m *testing.M) {
 		}
 	}
 	flag.Parse()
-	common.LeakCheckingTestMain(m,
+	goroutine_leak_check.LeakCheckingTestMain(m,
 		// We expect these to leak.
 		"github.com/facebookincubator/contest/tests/plugins/teststeps/hanging.(*hanging).Run",
 		"github.com/facebookincubator/contest/tests/plugins/teststeps/noreturn.(*noreturnStep).Run",
@@ -86,11 +86,6 @@ func TestMain(m *testing.M) {
 
 func newTestRunner() *TestRunner {
 	return NewTestRunnerWithTimeouts(stepInjectTimeout, shutdownTimeout)
-}
-
-func eventToStringNoTime(ev testevent.Event) string {
-	// Omit the timestamp to make output stable.
-	return fmt.Sprintf("{%s%s}", ev.Header, ev.Data)
 }
 
 func resetEventStorage() {
@@ -103,38 +98,12 @@ func tgt(id string) *target.Target {
 	return &target.Target{ID: id}
 }
 
-func getEvents(targetID, stepLabel *string) string {
-	q, _ := testevent.BuildQuery(testevent.QueryTestName(testName))
-	results, _ := evs.GetTestEvents(q)
-	var resultsForTarget []string
-	for _, r := range results {
-		if targetID != nil {
-			if r.Data.Target == nil {
-				continue
-			}
-			if *targetID != "" && r.Data.Target.ID != *targetID {
-				continue
-			}
-		}
-		if stepLabel != nil {
-			if *stepLabel != "" && r.Header.TestStepLabel != *stepLabel {
-				continue
-			}
-			if targetID == nil && r.Data.Target != nil {
-				continue
-			}
-		}
-		resultsForTarget = append(resultsForTarget, eventToStringNoTime(r))
-	}
-	return "\n" + strings.Join(resultsForTarget, "\n") + "\n"
-}
-
 func getStepEvents(stepLabel string) string {
-	return getEvents(nil, &stepLabel)
+	return common.GetTestEventsAsString(evs, testName, nil, &stepLabel)
 }
 
 func getTargetEvents(targetID string) string {
-	return getEvents(&targetID, nil)
+	return common.GetTestEventsAsString(evs, testName, &targetID, nil)
 }
 
 func newStep(label, name string, params *test.TestStepParameters) test.TestStepBundle {
@@ -468,9 +437,9 @@ func TestRandomizedMultiStep(t *testing.T) {
 {[1 1 SimpleTest Step 1][Target{ID: "%s"} TestFinishedEvent]}
 {[1 1 SimpleTest Step 1][Target{ID: "%s"} TargetOut]}
 `, tgt.ID, tgt.ID, tgt.ID, tgt.ID),
-			getEvents(&tgt.ID, &s1n))
+			common.GetTestEventsAsString(evs, testName, &tgt.ID, &s1n))
 		s3n := "Step 3"
-		if strings.Contains(getEvents(&tgt.ID, &s3n), "TestFinishedEvent") {
+		if strings.Contains(common.GetTestEventsAsString(evs, testName, &tgt.ID, &s3n), "TestFinishedEvent") {
 			numFinished++
 		}
 	}
@@ -522,7 +491,7 @@ func TestPauseResumeSimple(t *testing.T) {
 		tr := newTestRunner()
 		ctx, _, cancel := statectx.New()
 		defer cancel()
-		resumeState2 := strings.Replace(string(resumeState), `"version"`, `"Xversion"`, 1)
+		resumeState2 := strings.Replace(string(resumeState), `"v"`, `"Xv"`, 1)
 		_, err := runWithTimeout(
 			t, tr, ctx, []byte(resumeState2), 3, 2*time.Second, targets, steps)
 		require.Error(t, err)
